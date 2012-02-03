@@ -1,0 +1,15 @@
+(C) Martin Väth <martin@mvath.de>
+This project is under the BSD license.
+
+A POSIX shell wrapper for "cp -i -a", making use of "diff".
+
+For installation just copy "cpi" into your path.
+
+This is a somewhat verbose frontend for cp -i -a:
+For each file you see the differences before you confirm/reject the copying.
+If the destination file already exists, owner and mode are not preserved
+(except in recursive cases); matching files are not copied at all.
+This script requires that your "cp" command supports the options
+-a -i -d --preserve=timestamps
+
+For Gentoo, there is an ebuild in the mv overlay (available by layman).

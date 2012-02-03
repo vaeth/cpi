@@ -1,0 +1,166 @@
+#! /usr/bin/env sh
+# (C) Martin Vaeth <martin@mvath.de>
+
+Usage() {
+	printf '%s\n' "Usage: ${0##*/} source-file(s) dest-file/dir
+This is a somewhat verbose frontend for \"cp -i -a\":
+For each file you see the differences before you confirm/reject the copying.
+If the destination file already exists, owner and mode are not preserved
+(except in recursive cases); matching files are not copied at all.
+This script requires that your \"cp\" command supports the options
+-a -i -d --preserve=timestamps."
+	exit ${1:-1}
+}
+
+rstat=0
+Error() {
+	printf '%s\n' "${0##/*}: ${*}" >&2
+	rstat=1
+}
+
+Warn() {
+	Error "warning: ${*}"
+}
+
+Die() {
+	Error "${*}"
+	exit ${rstat}
+}
+
+if [ ${#} -lt 2 ]
+then	case "${1}" in
+	-[hH?]|--[Hh][Ee][Ll][Pp])
+		Usage 0;;
+	*)
+		Usage;;
+	esac
+fi
+
+eval last="\${${#}}"
+dest="${last%/}"
+[ -z "${last}" ] && dest='.'
+: ${dest:=/}
+
+if	test -d "${dest}"
+then	isdir=:
+	have=:
+elif	test -r "${dest}"
+then	[ ${#} -eq 2 ] || \
+		Die "destination not a directory but multiple files specified"
+	isdir=false
+	have=:
+else	isdir=false
+	have=false
+fi
+
+getdifftools=GetDiffTools
+GetDiffTools() {
+	getdifftools=:
+	if command -v colordiff >/dev/null 2>&1
+	then	diff=colordiff
+	else	diff=diff
+	fi
+	if command -v less >/dev/null 2>&1
+	then	haveless=:
+	else	havelsss=false
+	fi
+}
+Diff() {
+	${getdifftools}
+	if ${haveless}
+	then	diffstat="`{
+			{
+				"${diff}" "${@}"
+				printf '%s\n' "${?}" >&3
+			} | less --quit-if-one-screen >&4
+		} 3>&1`" 4>&1
+		[ "${diffstat}" -eq 0 ]
+	else	"${diff}" "${@}"
+	fi
+}
+
+checkcopy=CheckCp
+CheckCp() {
+	checkcopy=:
+	LANG=C cp --help 2>&1 | grep -- --preserve >/dev/null || \
+		Die 'cp is not compatible with this script'
+}
+Cp() {
+	${checkcopy}
+	cp "${@}"
+}
+
+Getkey() {
+	key=''
+	getkeyt="`stty -g`"
+	stty -icanon -echo
+	key="`dd count=1 bs=1 2>/dev/null`" || key=''
+	stty ${getkeyt}
+}
+askt="(Yes/No/Rest/Quit) "
+BackSpace() {
+	backspacea="${askt}"
+	backspaceb=''
+	while [ -n "${backspacea}" ]
+	do	backspaceb="${backspaceb}"'\b \b'
+		backspacea="${backspacea%?}"
+	done
+	printf "${backspaceb}%s\n" "${*}"
+}
+rest=false
+Ask() {
+	printf "%s -> %s? %s" "${curr}" "${dest}" "${askt}"
+	while	:
+	do	${rest} || Getkey
+		case "${key}" in
+		y*|Y*)	BackSpace 'Yes'
+			return 0
+		;;
+		n*|N*|'')
+			BackSpace 'No'
+			return 1
+		;;
+		r*|R*)	BackSpace 'Yes'
+			rest=:
+			return 0
+		;;
+		q*|Q*)	BackSpace 'Quit'
+			exit ${rstat}
+		;;
+		esac
+	done
+}
+
+while [ ${#} -gt 1 ]
+do	curr="${1%/}"
+	if test -d "${curr}"
+	then	${isdir} || Warn "skipping directory ${curr}"
+		if test -r "${dest}/${curr}"
+		then	if test -d "${dest}/${curr}"
+			then	Diff -r -- "${curr}" "${dest}/${curr}" || {
+					Ask && Cp -a -i -- "${curr}" "${dest}"
+				} || rstat=1
+			else	Warn "not a directory: ${dest}/${curr}"
+			fi
+		else	Ask && Cp -a -- "${curr}" "${dest}" || rstat=1
+		fi
+	elif test -r "${curr}"
+	then	if ${isdir}
+		then	destfile="${dest}/${curr##*/}"
+			currhave=false
+			test -r "${destfile}" && currhave=:
+		else	destfile="${dest}"
+			currhave=${have}
+		fi
+		if ${currhave}
+		then	Diff -- "${curr}" "${destfile}" || {
+				Ask && Cp --preserve=timestamps -d -- \
+					"${curr}" "${dest}"
+			} || rstat=1
+		else	Ask && Cp -a -- "${curr}" "${dest}" || rstat=1
+		fi
+	else	Warn "skipping nonexistent ${curr}"
+	fi
+	shift
+done
+exit ${rstat}

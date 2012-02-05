@@ -1,20 +1,32 @@
 #! /usr/bin/env sh
 # (C) Martin Vaeth <martin@mvath.de>
 
+Echo() {
+	printf '%s\n' "${*}"
+}
+
 Usage() {
-	printf '%s\n' "Usage: ${0##*/} source-file(s) dest-file/dir
+	Echo "Usage: ${0##*/} [options] source-file(s) dest-file/dir
 This is a somewhat verbose frontend for \"cp -i -a\":
 For each file you see the differences before you confirm/reject the copying.
-If the destination file already exists, owner and mode are not preserved
-(except in recursive cases); matching files are not copied at all.
-This script requires that your \"cp\" command supports the options
--a -i -d --preserve=timestamps."
+
+By default, existing files are copied with only preserving timestamps;
+if source-file(s) is a directory, it will copied with \"cp -i -a\".
+However, you can also choose instead \"cp -a\" per file/directory.
+
+This script requires that your \"cp\" command supports the non-POSIX options
+-a -d --preserve=timestamps. \"colordiff\" and \"less\" are used if available.
+
+options:
+-t dest-file/dir (with this option, all args are treated as source-file(s)
+-f               Ask also for matching files/dirs whether to copy
+-h               Show this help"
 	exit ${1:-1}
 }
 
 rstat=0
 Error() {
-	printf '%s\n' "${0##/*}: ${*}" >&2
+	printf '%s\n' "${0##*/}: ${*}" >&2
 	rstat=1
 }
 
@@ -27,31 +39,47 @@ Die() {
 	exit ${rstat}
 }
 
-if [ ${#} -lt 2 ]
-then	case "${1}" in
-	-[hH?]|--[Hh][Ee][Ll][Pp])
-		Usage 0;;
-	*)
-		Usage;;
+match=false
+destarg=false
+OPTIND=1
+while getopts "fFAat:hH?" opt
+do	case "${opt}" in
+	f)	match=:;;
+	t)	destarg=:
+		dest="${OPTARG}";;
+	*)	Usage 0;;
 	esac
-fi
+done
+shift $(( ${OPTIND} - 1 ))
 
-eval last="\${${#}}"
-dest="${last%/}"
-[ -z "${last}" ] && dest='.'
+[ ${#} -ge 1 ] || Usage
+${destarg} || [ ${#} -gt 1 ] || Usage
+
+${destarg} || eval dest="\${${#}}"
+: ${dest:=.}
+dest=${dest%/}
 : ${dest:=/}
 
 if	test -d "${dest}"
 then	isdir=:
 	have=:
 elif	test -r "${dest}"
-then	[ ${#} -eq 2 ] || \
-		Die "destination not a directory but multiple files specified"
-	isdir=false
+then		isdir=false
 	have=:
 else	isdir=false
 	have=false
 fi
+if ! ${isdir}
+then	if ${destarg}
+	then	[ ${#} -eq 1 ]
+	else	[ ${#} -eq 2 ]
+	fi || Die "for multiple files, destination ${dest} must be a directory"
+fi
+
+restfile=false
+restdir=false
+forcefile=false
+forcedir=false
 
 getdifftools=GetDiffTools
 GetDiffTools() {
@@ -67,15 +95,25 @@ GetDiffTools() {
 }
 Diff() {
 	${getdifftools}
+	if ${1}
+	then	Echo "# diff -q ${2}"
+		shift 2
+		"${diff}" -q "${@}"
+		return
+	fi
+	diffecho="# diff ${2}"
+	shift 2
 	if ${haveless}
 	then	diffstat="`{
 			{
+				Echo "${diffecho}"
 				"${diff}" "${@}"
-				printf '%s\n' "${?}" >&3
-			} | less --quit-if-one-screen >&4
+				printf '%s' "${?}" >&3
+			} | less -FR >&4
 		} 3>&1`" 4>&1
 		[ "${diffstat}" -eq 0 ]
-	else	"${diff}" "${@}"
+	else	Echo "${diffecho}"
+		"${diff}" "${@}"
 	fi
 }
 
@@ -97,67 +135,119 @@ Getkey() {
 	key="`dd count=1 bs=1 2>/dev/null`" || key=''
 	stty ${getkeyt}
 }
-askt="(Yes/No/Rest/Quit) "
 BackSpace() {
-	backspacea="${askt}"
-	backspaceb=''
-	while [ -n "${backspacea}" ]
-	do	backspaceb="${backspaceb}"'\b \b'
-		backspacea="${backspacea%?}"
+	backcount="${askt}"
+	backspace=''
+	while [ -n "${backcount}" ]
+	do	backspace="${backspace}"'\b \b'
+		backcount="${backcount%?}"
 	done
-	printf "${backspaceb}%s\n" "${*}"
+	backspace="${backspace}"'%s\n'
+	printf "${backspace}" "${*}"
 }
-rest=false
 Ask() {
-	printf "%s -> %s? %s" "${curr}" "${dest}" "${askt}"
-	while	:
-	do	${rest} || Getkey
-		case "${key}" in
-		y*|Y*)	BackSpace 'Yes'
+	aska="${curr}"
+	askb="${dest}"
+	[ ${1} != 'dir' ] || aska="${aska}/"
+	! ${isdir} || askb="${askb}/"
+	if eval "\${rest${1}}"
+	then	if eval "\${force${1}}"
+		then	askt="YES for all ${1}s (cp -a)"
+		else	askt="yes for all ${1}s"
+		fi
+		printf '%s -> %s\t%s\n' "${aska}" "${askb}" "${askt}"
+		return 0
+	fi
+	askt='yes'
+	${2} && askt="${askt}"'/YES (cp -a)'
+	askt="${askt}"'/no/all '"${1}"'s/ALL '"${1}"'s (cp -a)/quit? '
+	printf '%s -> %s\t%s' "${aska}" "${askb}" "${askt}"
+	while :
+	do	Getkey
+	case "${key}" in
+	y)	BackSpace 'yes'
+		eval "force${1}=false"
+		return 0
+	;;
+	Y)	if ${2}
+		then	BackSpace 'YES (cp -a)'
+			eval "force${1}=:"
 			return 0
-		;;
-		n*|N*|'')
-			BackSpace 'No'
-			return 1
-		;;
-		r*|R*)	BackSpace 'Yes'
-			rest=:
-			return 0
-		;;
-		q*|Q*)	BackSpace 'Quit'
-			exit ${rstat}
-		;;
-		esac
+		fi
+	;;
+	n)	BackSpace 'no'
+		return 1
+	;;
+	a)	BackSpace "yes for all ${1}s"
+		eval "rest${1}=:
+		force${1}=false"
+		return 0
+	;;
+	A)	BackSpace "YES for all ${1}s (cp -a)"
+		eval "rest${1}=:
+		force${1}=:"
+		return 0
+	;;
+	q)	BackSpace 'quit'
+		exit ${rstat}
+	;;
+	esac
 	done
 }
 
-while [ ${#} -gt 1 ]
+if ${destarg}
+then	skiparg=0
+else	skiparg=1
+fi
+while [ ${#} -gt ${skiparg} ]
 do	curr="${1%/}"
 	if test -d "${curr}"
 	then	${isdir} || Warn "skipping directory ${curr}"
 		if test -r "${dest}/${curr}"
 		then	if test -d "${dest}/${curr}"
-			then	Diff -r -- "${curr}" "${dest}/${curr}" || {
-					Ask && Cp -a -i -- "${curr}" "${dest}"
-				} || rstat=1
-			else	Warn "not a directory: ${dest}/${curr}"
+			then	if Diff ${restdir} \
+					"-r ${curr}/ ${dest%/}/${curr}/" \
+					-r -- "${curr}" "${dest}/${curr}"
+				then	${match}
+				fi && if Ask dir :
+				then	if ${forcedir}
+					then	Cp -a -- "${curr}" "${dest}"
+					else	Cp -a -i -- "${curr}" "${dest}"
+					fi || rstat=1
+				fi
+			else	Warn "not a directory: ${dest%/}/${curr}"
 			fi
-		else	Ask && Cp -a -- "${curr}" "${dest}" || rstat=1
+		elif Ask dir false
+		then	Cp -a -- "${curr}" "${dest}" || rstat=1
 		fi
 	elif test -r "${curr}"
 	then	if ${isdir}
 		then	destfile="${dest}/${curr##*/}"
-			currhave=false
-			test -r "${destfile}" && currhave=:
+			if test -r "${destfile}"
+			then	currhave=:
+			else	currhave=false
+			fi
 		else	destfile="${dest}"
 			currhave=${have}
 		fi
 		if ${currhave}
-		then	Diff -- "${curr}" "${destfile}" || {
-				Ask && Cp --preserve=timestamps -d -- \
-					"${curr}" "${dest}"
-			} || rstat=1
-		else	Ask && Cp -a -- "${curr}" "${dest}" || rstat=1
+		then	if Diff ${restfile} "${curr} ${destfile}" \
+				-- "${curr}" "${destfile}"
+			then	if Ask file :
+				then	if ${forcefile}
+					then	Cp -a -- "${curr}" "${dest}"
+					else	touch -r "${curr}" -- "${dest}"
+					fi || rstat=1
+				fi
+			elif Ask file :
+			then	if ${forcefile}
+				then	Cp -a -- "${curr}" "${dest}"
+				else	Cp --preserve=timestamps -d -- \
+						"${curr}" "${dest}"
+				fi || rstat=1
+			fi
+		elif Ask file false
+		then	Cp -a -- "${curr}" "${dest}" || rstat=1
 		fi
 	else	Warn "skipping nonexistent ${curr}"
 	fi

@@ -1,0 +1,6 @@
+#compdef cpi
+_arguments -s -S -A '-*' : \
+'(* -)'{'-h','-H','-\\?'}'[help]' \
+'-i[Start command immediately]'
+'-t+[Use ARG as temporary directory]:queuefile:(/tmp ${TEMPDIR})'
+'*::files or dirs:_files'

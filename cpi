@@ -1,5 +1,5 @@
 #! /usr/bin/env sh
-# (C) Martin Vaeth <martin@mvath.de>
+# (C) Martin V\"ath <martin@mvath.de>
 
 Echo() {
 	printf '%s\n' "${*}"
@@ -26,7 +26,7 @@ options:
 
 rstat=0
 Error() {
-	printf '%s\n' "${0##*/}: ${*}" >&2
+	Echo "${0##*/}: ${*}" >&2
 	rstat=1
 }
 
@@ -43,10 +43,10 @@ match=false
 destarg=false
 OPTIND=1
 while getopts "fFAat:hH?" opt
-do	case "${opt}" in
+do	case ${opt} in
 	f)	match=:;;
 	t)	destarg=:
-		dest="${OPTARG}";;
+		dest=${OPTARG};;
 	*)	Usage 0;;
 	esac
 done
@@ -55,7 +55,7 @@ shift $(( ${OPTIND} - 1 ))
 [ ${#} -ge 1 ] || Usage
 ${destarg} || [ ${#} -gt 1 ] || Usage
 
-${destarg} || eval dest="\${${#}}"
+${destarg} || eval "dest=\${${#}}"
 : ${dest:=.}
 dest=${dest%/}
 : ${dest:=/}
@@ -104,13 +104,13 @@ Diff() {
 	diffecho="# diff ${2}"
 	shift 2
 	if ${haveless}
-	then	diffstat="`{
+	then	diffstat=`{
 			{
 				Echo "${diffecho}"
 				"${diff}" "${@}"
 				printf '%s' "${?}" >&3
 			} | less -FR >&4
-		} 3>&1`" 4>&1
+		} 3>&1` 4>&1
 		[ "${diffstat}" -eq 0 ]
 	else	Echo "${diffecho}"
 		"${diff}" "${@}"
@@ -130,24 +130,24 @@ Cp() {
 
 Getkey() {
 	key=''
-	getkeyt="`stty -g`"
+	getkeyt=`stty -g`
 	stty -icanon -echo
-	key="`dd count=1 bs=1 2>/dev/null`" || key=''
+	key=`dd count=1 bs=1 2>/dev/null` || key=''
 	stty ${getkeyt}
 }
 BackSpace() {
 	backcount="${askt}"
 	backspace=''
 	while [ -n "${backcount}" ]
-	do	backspace="${backspace}"'\b \b'
-		backcount="${backcount%?}"
+	do	backspace=${backspace}'\b \b'
+		backcount=${backcount%?}
 	done
-	backspace="${backspace}"'%s\n'
+	backspace=${backspace}'%s\n'
 	printf "${backspace}" "${*}"
 }
 Ask() {
-	aska="${curr}"
-	askb="${dest}"
+	aska=${curr}
+	askb=${dest}
 	[ ${1} != 'dir' ] || aska="${aska}/"
 	! ${isdir} || askb="${askb}/"
 	if eval "\${rest${1}}"
@@ -159,12 +159,12 @@ Ask() {
 		return 0
 	fi
 	askt='yes'
-	${2} && askt="${askt}"'/YES (cp -a)'
-	askt="${askt}"'/no/all '"${1}"'s/ALL '"${1}"'s (cp -a)/quit? '
+	${2} && askt=${askt}'/YES (cp -a)'
+	askt=${askt}'/no/all '${1}'s/ALL '${1}'s (cp -a)/quit? '
 	printf '%s -> %s\t%s' "${aska}" "${askb}" "${askt}"
 	while :
 	do	Getkey
-	case "${key}" in
+	case ${key} in
 	y)	BackSpace 'yes'
 		eval "force${1}=false"
 		return 0
@@ -200,7 +200,7 @@ then	skiparg=0
 else	skiparg=1
 fi
 while [ ${#} -gt ${skiparg} ]
-do	curr="${1%/}"
+do	curr=${1%/}
 	if test -d "${curr}"
 	then	${isdir} || Warn "skipping directory ${curr}"
 		if test -r "${dest}/${curr}"
@@ -227,7 +227,7 @@ do	curr="${1%/}"
 			then	currhave=:
 			else	currhave=false
 			fi
-		else	destfile="${dest}"
+		else	destfile=${dest}
 			currhave=${have}
 		fi
 		if ${currhave}

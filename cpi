@@ -55,7 +55,7 @@ shift $(( ${OPTIND} - 1 ))
 [ ${#} -ge 1 ] || Usage
 ${destarg} || [ ${#} -gt 1 ] || Usage
 
-${destarg} || eval "dest=\${${#}}"
+${destarg} || eval dest=\${${#}}
 : ${dest:=.}
 dest=${dest%/}
 : ${dest:=/}
@@ -129,29 +129,28 @@ Cp() {
 }
 
 Getkey() {
-	key=''
+	key=
 	getkeyt=`stty -g`
 	stty -icanon -echo
-	key=`dd count=1 bs=1 2>/dev/null` || key=''
+	key=`dd count=1 bs=1 2>/dev/null` || key=
 	stty ${getkeyt}
 }
 BackSpace() {
-	backcount="${askt}"
-	backspace=''
+	backcount=${askt}
+	backspace=
 	while [ -n "${backcount}" ]
 	do	backspace=${backspace}'\b \b'
 		backcount=${backcount%?}
 	done
-	backspace=${backspace}'%s\n'
-	printf "${backspace}" "${*}"
+	printf "${backspace}"'%s\n' "${*}"
 }
 Ask() {
 	aska=${curr}
 	askb=${dest}
 	[ ${1} != 'dir' ] || aska="${aska}/"
 	! ${isdir} || askb="${askb}/"
-	if eval "\${rest${1}}"
-	then	if eval "\${force${1}}"
+	if eval \${rest${1}}
+	then	if eval \${force${1}}
 		then	askt="YES for all ${1}s (cp -a)"
 		else	askt="yes for all ${1}s"
 		fi
@@ -166,12 +165,12 @@ Ask() {
 	do	Getkey
 	case ${key} in
 	y)	BackSpace 'yes'
-		eval "force${1}=false"
+		eval force${1}=false
 		return 0
 	;;
 	Y)	if ${2}
 		then	BackSpace 'YES (cp -a)'
-			eval "force${1}=:"
+			eval force${1}=:
 			return 0
 		fi
 	;;

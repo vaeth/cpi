@@ -15,7 +15,7 @@ if source-file(s) is a directory, it will copied with \"cp -i -a\".
 However, you can also choose instead \"cp -a\" per file/directory.
 
 This script requires that your \"cp\" command supports the non-POSIX options
--a -d --preserve=timestamps. \"colordiff\" and \"less\" are used if available.
+-a -d. --preserve=timestamps, \"colordiff\", and \"less\" are used if available.
 
 options:
 -t dest-file/dir (with this option, all args are treated as source-file(s)
@@ -81,6 +81,16 @@ restdir=false
 forcefile=false
 forcedir=false
 
+which=`command -v which` || which=
+MakeExternal() {
+	[ "${which}" = 'which' ] && eval ${1}=\`which ${2}\` \
+		|| eval ${1}=\`command -v ${2}\` || eval ${1}=
+	eval ": \${${1}:=${2}}"
+}
+OptExternal() {
+	eval "[ -n \"\${${1}}\" ]" || MakeExternal ${1} ${2-${1}}
+}
+
 getdifftools=GetDiffTools
 GetDiffTools() {
 	getdifftools=:
@@ -90,7 +100,10 @@ GetDiffTools() {
 	fi
 	if command -v less >/dev/null 2>&1
 	then	haveless=:
-	else	havelsss=false
+		MakeExternal less less
+		LESS="${LESS} -FR"
+		export LESS
+	else	haveless=false
 	fi
 }
 Diff() {
@@ -109,7 +122,7 @@ Diff() {
 				Echo "${diffecho}"
 				"${diff}" "${@}"
 				printf '%s' "${?}" >&3
-			} | less -FR >&4
+			} | "${less}" >&4
 		} 3>&1` 4>&1
 		[ "${diffstat}" -eq 0 ]
 	else	Echo "${diffecho}"
@@ -117,15 +130,18 @@ Diff() {
 	fi
 }
 
-checkcopy=CheckCp
-CheckCp() {
-	checkcopy=:
-	LANG=C cp --help 2>&1 | grep -- --preserve >/dev/null || \
-		Die 'cp is not compatible with this script'
-}
+cp=
 Cp() {
-	${checkcopy}
-	cp "${@}"
+	OptExternal cp
+	"${cp}" "${@}"
+}
+
+preservestat=
+CheckPreserve() {
+	[ -n "${preservestat}" ] && return ${preservestat}
+	LANG=C Cp --help 2>&1 | grep -- --preserve >/dev/null
+	preservestat=${?}
+	return ${preservestat}
 }
 
 Getkey() {
@@ -241,8 +257,13 @@ do	curr=${1%/}
 			elif Ask file :
 			then	if ${forcefile}
 				then	Cp -a -- "${curr}" "${dest}"
-				else	Cp --preserve=timestamps -d -- \
+				elif	CheckPreserve
+				then	Cp --preserve=timestamps -d -- \
 						"${curr}" "${dest}"
+				else	Cp -d -- "${curr}" "${dest}" && {
+						test -h "${dest}" || \
+						touch -r "${curr}" -- "${dest}"
+					}
 				fi || rstat=1
 			fi
 		elif Ask file false

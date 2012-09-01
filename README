@@ -1,18 +1,20 @@
 (C) Martin Väth <martin@mvath.de>
 This project is under the BSD license.
 
-A POSIX shell wrapper for "cp -i -a", making use of "diff".
+A POSIX shell wrapper for "cp -i -a" and "mv -i", making use of "diff".
 
-This is a somewhat verbose frontend for cp -i -a:
-For each file you see the differences before you confirm/reject the copying.
+This is a somewhat verbose frontend for cp -i -a and mv -i:
+For each file you see the differences before you confirm/reject
+the copying/moving.
 
 You get more detailed instructions by calling
 	cpi -h
+	mvi -h
 
-This script requires that your "cp" command supports the non-POSIX options
+The cpi variant requires that your "cp" command supports the non-POSIX options
 -a -d --preserve=timestamps
 
-For installation just copy "cpi" with read+exec permissions into your path.
-To obtain support for zsh completion, copy _cpi to a directory of zsh's $fpath.
+For installation just copy the content of bin/ into your path.
+To obtain support for zsh completion, copy the content of zsh/ to zsh's $fpath.
 
 For Gentoo, there is an ebuild in the mv overlay (available by layman).

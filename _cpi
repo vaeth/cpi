@@ -1,7 +1,0 @@
-#compdef cpi
-_arguments -s -S -A '-*' : \
-'(* -)'{'-h','-H','-\\?'}'[help]' \
-'-h[help]' \
-'-f[force asking for matching files]' \
-'-t+[Use ARG as destination]:destination directory/file:_files' \
-'*::files or dirs:_files'

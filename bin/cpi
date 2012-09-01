@@ -1,13 +1,20 @@
 #! /usr/bin/env sh
 # (C) Martin V\"ath <martin@mvath.de>
 
+copy=:
+case ${0##*/} in
+*mv*)
+	copy=false;;
+esac
+
 Echo() {
 	printf '%s\n' "${*}"
 }
 
 Usage() {
-	Echo "Usage: ${0##*/} [options] source-file(s) dest-file/dir
-This is a somewhat verbose frontend for \"cp -i -a\":
+	Echo "Usage: ${0##*/} [options] source-file(s) dest-file/dir"
+	if ${copy}
+	then	Echo "This is a somewhat verbose frontend for \"cp -i -a\":
 For each file you see the differences before you confirm/reject the copying.
 
 By default, existing files are copied with only preserving timestamps;
@@ -15,12 +22,23 @@ if source-file(s) is a directory, it will copied with \"cp -i -a\".
 However, you can also choose instead \"cp -a\" per file/directory.
 
 This script requires that your \"cp\" command supports the non-POSIX options
--a -d. --preserve=timestamps, \"colordiff\", and \"less\" are used if available.
-
+-a -d. --preserve=timestamps, \"colordiff\", and \"less\" are used if available."
+	else	Echo "This is a somewhat verbose frontend for \"mv -i\":
+For each file you see the differences before you confirm the moving."
+	fi
+	Echo "
 options:
--t dest-file/dir (with this option, all args are treated as source-file(s)
--f               Ask also for matching files/dirs whether to copy
--h               Show this help"
+-t dest-file/dir (with this option, all args are treated as source-file(s)"
+	! ${copy} || Echo \
+"-f               Ask also for matching files/dirs whether to copy"
+	Echo \
+"-h               Show this help"
+	if ${copy}
+	then	Echo \
+"-M               Act as it mvi was called"
+	else	Echo \
+"-C               Act as if cpi was called"
+	fi
 	exit ${1:-1}
 }
 
@@ -42,11 +60,13 @@ Die() {
 match=false
 destarg=false
 OPTIND=1
-while getopts "fFAat:hH?" opt
+while getopts "fFAat:CMhH?" opt
 do	case ${opt} in
 	f)	match=:;;
 	t)	destarg=:
 		dest=${OPTARG};;
+	C)	copy=:;;
+	M)	copy=false;;
 	*)	Usage 0;;
 	esac
 done
@@ -64,7 +84,7 @@ if	test -d "${dest}"
 then	isdir=:
 	have=:
 elif	test -r "${dest}"
-then		isdir=false
+then	isdir=false
 	have=:
 else	isdir=false
 	have=false
@@ -163,51 +183,75 @@ BackSpace() {
 Ask() {
 	aska=${curr}
 	askb=${dest}
+	asks='='
+	${copy} || asks='-'
+	if ${2}
+	then	asks=${asks}'>|'
+	else	asks=${asks}'o'
+	fi
 	[ ${1} != 'dir' ] || aska="${aska}/"
 	! ${isdir} || askb="${askb}/"
 	if eval \${rest${1}}
-	then	if eval \${force${1}}
+	then	if ${copy} && eval \${force${1}}
 		then	askt="YES for all ${1}s (cp -a)"
 		else	askt="yes for all ${1}s"
 		fi
-		printf '%s -> %s\t%s\n' "${aska}" "${askb}" "${askt}"
+		printf '%s %s %s\t%s\n' "${aska}" "${asks}" "${askb}" "${askt}"
 		return 0
 	fi
 	askt='yes'
-	${2} && askt=${askt}'/YES (cp -a)'
-	askt=${askt}'/no/all '${1}'s/ALL '${1}'s (cp -a)/quit? '
-	printf '%s -> %s\t%s' "${aska}" "${askb}" "${askt}"
+	if ${copy}
+	then	${2} && askt=${askt}'/YES (cp -a)'
+		askt=${askt}'/no/all '${1}'s/ALL '${1}'s (cp -a)/quit? '
+	else	askt=${askt}'/no/all '${1}'s/quit? '
+	fi
+	printf '%s %s %s\t%s' "${aska}" "${asks}" "${askb}" "${askt}"
 	while :
 	do	Getkey
 	case ${key} in
 	y)	BackSpace 'yes'
 		eval force${1}=false
-		return 0
-	;;
-	Y)	if ${2}
+		return 0;;
+	Y)	if ${copy} && ${2}
 		then	BackSpace 'YES (cp -a)'
 			eval force${1}=:
 			return 0
-		fi
-	;;
+		fi;;
 	n)	BackSpace 'no'
-		return 1
-	;;
+		return 1;;
 	a)	BackSpace "yes for all ${1}s"
 		eval "rest${1}=:
 		force${1}=false"
-		return 0
-	;;
-	A)	BackSpace "YES for all ${1}s (cp -a)"
+		return 0;;
+	A)	! ${copy} && continue
+		BackSpace "YES for all ${1}s (cp -a)"
 		eval "rest${1}=:
 		force${1}=:"
-		return 0
-	;;
+		return 0;;
 	q)	BackSpace 'quit'
-		exit ${rstat}
-	;;
+		exit ${rstat};;
 	esac
 	done
+}
+
+CopyDirToExisting() {
+	if ! test -d "${dest}/${curr}"
+	then	Warn "not a directory: ${dest%/}/${curr}"
+		return
+	fi
+	if ! ${copy}
+	then	Warn "not moving onto existing dir ${dest%/}/${curr}"
+		return
+	fi
+	if Diff ${restdir} "-r ${curr}/ ${dest%/}/${curr}/" \
+		-r -- "${curr}" "${dest}/${curr}"
+	then	${match}
+	fi && if Ask dir :
+	then	if ${forcedir}
+		then	Cp -a -- "${curr}" "${dest}"
+		else	Cp -a -i -- "${curr}" "${dest}"
+		fi || rstat=1
+	fi
 }
 
 if ${destarg}
@@ -219,19 +263,7 @@ do	curr=${1%/}
 	if test -d "${curr}"
 	then	${isdir} || Warn "skipping directory ${curr}"
 		if test -r "${dest}/${curr}"
-		then	if test -d "${dest}/${curr}"
-			then	if Diff ${restdir} \
-					"-r ${curr}/ ${dest%/}/${curr}/" \
-					-r -- "${curr}" "${dest}/${curr}"
-				then	${match}
-				fi && if Ask dir :
-				then	if ${forcedir}
-					then	Cp -a -- "${curr}" "${dest}"
-					else	Cp -a -i -- "${curr}" "${dest}"
-					fi || rstat=1
-				fi
-			else	Warn "not a directory: ${dest%/}/${curr}"
-			fi
+		then	CopyDirToExisting
 		elif Ask dir false
 		then	Cp -a -- "${curr}" "${dest}" || rstat=1
 		fi
@@ -249,13 +281,17 @@ do	curr=${1%/}
 		then	if Diff ${restfile} "${curr} ${destfile}" \
 				-- "${curr}" "${destfile}"
 			then	if Ask file :
-				then	if ${forcefile}
+				then	if ! ${copy}
+					then	mv -- "${curr}" "${dest}"
+					elif ${forcefile}
 					then	Cp -a -- "${curr}" "${dest}"
 					else	touch -r "${curr}" -- "${dest}"
 					fi || rstat=1
 				fi
 			elif Ask file :
-			then	if ${forcefile}
+			then	if ! ${copy}
+				then	mv -- "${curr}" "${dest}"
+				elif ${forcefile}
 				then	Cp -a -- "${curr}" "${dest}"
 				elif	CheckPreserve
 				then	Cp --preserve=timestamps -d -- \
@@ -267,7 +303,10 @@ do	curr=${1%/}
 				fi || rstat=1
 			fi
 		elif Ask file false
-		then	Cp -a -- "${curr}" "${dest}" || rstat=1
+		then	if ! ${copy}
+			then	mv -- "${curr}" "${dest}"
+			else	Cp -a -- "${curr}" "${dest}"
+			fi || rstat=1
 		fi
 	else	Warn "skipping nonexistent ${curr}"
 	fi

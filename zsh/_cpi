@@ -7,14 +7,13 @@ case $service in
 );;
 (*)
 	service_opts=(
-'(-M)-f[force asking for matching files]'
 '(-f -C)-M[act as mvi]'
 );;
 esac
 
 _arguments -s -S -A '-*' : \
 '(* -)'{'-h','-H','-\\?'}'[help]' \
-'-h[help]' \
+'-f[force asking for matching files in copy mode]' \
 '-t+[Use ARG as destination]:destination directory/file:_files' \
 ${service_opts} \
 '*::files or dirs:_files'

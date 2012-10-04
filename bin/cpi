@@ -28,11 +28,9 @@ For each file you see the differences before you confirm the moving."
 	fi
 	Echo "
 options:
--t dest-file/dir (with this option, all args are treated as source-file(s)"
-	! ${copy} || Echo \
-"-f               Ask also for matching files/dirs whether to copy"
-	Echo \
-"-h               Show this help"
+-t dest-file/dir (with this option, all args are treated as source-file(s)
+-f               Ask also for matching files/dirs whether to copy
+-h               Show this help"
 	if ${copy}
 	then	Echo \
 "-M               Act as it mvi was called"
@@ -96,10 +94,14 @@ then	if ${destarg}
 	fi || Die "for multiple files, destination ${dest} must be a directory"
 fi
 
-restfile=false
-restdir=false
-forcefile=false
-forcedir=false
+InitInteractive() {
+	restfile=false
+	restdir=false
+	forcefile=false
+	forcedir=false
+}
+
+InitInteractive
 
 which=`command -v which` || which=
 MakeExternal() {
@@ -181,7 +183,8 @@ BackSpace() {
 	printf "${backspace}"'%s\n' "${*}"
 }
 Ask() {
-	aska=${curr}
+while :
+do	aska=${curr}
 	askb=${dest}
 	asks='='
 	${copy} || asks='-'
@@ -202,13 +205,23 @@ Ask() {
 	askt='yes'
 	if ${copy}
 	then	${2} && askt=${askt}'/YES (cp -a)'
-		askt=${askt}'/no/all '${1}'s/ALL '${1}'s (cp -a)/quit? '
-	else	askt=${askt}'/no/all '${1}'s/quit? '
+		askt=${askt}'/no/all '${1}'s/ALL '${1}'s (cp -a)/move/quit? '
+	else	askt=${askt}'/no/all '${1}'s/copy/quit? '
 	fi
 	printf '%s %s %s\t%s' "${aska}" "${asks}" "${askb}" "${askt}"
 	while :
 	do	Getkey
 	case ${key} in
+	m)	! ${copy} && continue
+		BackSpace 'switch to move mode'
+		copy=false
+		InitInteractive
+		break;;
+	c)	${copy} && continue
+		BackSpace 'switch to copy mode'
+		copy=:
+		InitInteractive
+		break;;
 	y)	BackSpace 'yes'
 		eval force${1}=false
 		return 0;;
@@ -232,6 +245,7 @@ Ask() {
 		exit ${rstat};;
 	esac
 	done
+done
 }
 
 CopyDirToExisting() {

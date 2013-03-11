@@ -29,6 +29,7 @@ For each file you see the differences before you confirm the moving."
 	Echo "
 options:
 -t dest-file/dir (with this option, all args are treated as source-file(s)
+-U X             Use X lines of unified context. X=0 switches the option off.
 -f               Ask also for matching files/dirs whether to copy
 -h               Show this help"
 	if ${copy}
@@ -55,14 +56,16 @@ Die() {
 	exit ${rstat}
 }
 
+unified=:
 match=false
 destarg=false
 OPTIND=1
-while getopts "fFAat:CMhH?" opt
+while getopts "fFAat:U:CMhH?" opt
 do	case ${opt} in
 	f)	match=:;;
 	t)	destarg=:
 		dest=${OPTARG};;
+	U)	unified=${OPTARG};;
 	C)	copy=:;;
 	M)	copy=false;;
 	*)	Usage 0;;
@@ -93,6 +96,15 @@ then	if ${destarg}
 	else	[ ${#} -eq 2 ]
 	fi || Die "for multiple files, destination ${dest} must be a directory"
 fi
+
+case ${unified} in
+0)
+	diffopt=;;
+*[!0-9]*)
+	diffopt='-u';;
+*)
+	diffopt="-U ${unified}";;
+esac
 
 InitInteractive() {
 	restfile=false
@@ -136,13 +148,13 @@ Diff() {
 		"${diff}" -q "${@}"
 		return
 	fi
-	diffecho="# diff ${2}"
+	diffecho="# diff ${diffopt}${diffopt:+ }${2}"
 	shift 2
 	if ${haveless}
 	then	diffstat=`{
 			{
 				Echo "${diffecho}"
-				"${diff}" "${@}"
+				"${diff}" ${diffopt} "${@}"
 				printf '%s' "${?}" >&3
 			} | "${less}" >&4
 		} 3>&1` 4>&1
@@ -257,8 +269,8 @@ CopyDirToExisting() {
 	then	Warn "not moving onto existing dir ${dest%/}/${curr}"
 		return
 	fi
-	if Diff ${restdir} "-r ${curr}/ ${dest%/}/${curr}/" \
-		-r -- "${curr}" "${dest}/${curr}"
+	if Diff ${restdir} "-r ${dest%/}/${curr}/ ${curr}/" \
+		-r -- "${dest}/${curr}" "${curr}"
 	then	${match}
 	fi && if Ask dir :
 	then	if ${forcedir}
@@ -292,8 +304,8 @@ do	curr=${1%/}
 			currhave=${have}
 		fi
 		if ${currhave}
-		then	if Diff ${restfile} "${curr} ${destfile}" \
-				-- "${curr}" "${destfile}"
+		then	if Diff ${restfile} "${destfile} ${curr}" \
+				-- "${destfile}" "${curr}"
 			then	if Ask file :
 				then	if ! ${copy}
 					then	mv -- "${curr}" "${dest}"

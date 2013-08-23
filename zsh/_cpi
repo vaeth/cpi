@@ -7,13 +7,15 @@ case $service in
 );;
 (*)
 	service_opts=(
-'(-f -C)-M[act as mvi]'
+'(-C)-M[act as mvi]'
 );;
 esac
 
 _arguments -s -S -A '-*' : \
 '(* -)'{'-h','-H','-\\?'}'[help]' \
-'-f[force asking for matching files in copy mode]' \
+'-f[force asking for matching files]' \
+'-n[skip new (nonexistent in dest) files]' \
+'-U+[X (Use X lines unified context. X=0 means no -u)]:line numbers or 0 for no -u:(0)' \
 '-t+[Use ARG as destination]:destination directory/file:_files' \
 ${service_opts} \
 '*::files or dirs:_files'

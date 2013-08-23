@@ -29,8 +29,9 @@ For each file you see the differences before you confirm the moving."
 	Echo "
 options:
 -t dest-file/dir (with this option, all args are treated as source-file(s)
--U X             Use X lines of unified context. X=0 switches the option off.
+-U X             Use X lines unified context. X=0 means no -u
 -f               Ask also for matching files/dirs whether to copy
+-n               Skip new (nonexistent in dest) files
 -h               Show this help"
 	if ${copy}
 	then	Echo \
@@ -58,11 +59,13 @@ Die() {
 
 unified=:
 match=false
+new=:
 destarg=false
 OPTIND=1
-while getopts "fFAat:U:CMhH?" opt
+while getopts "fnt:U:CMhH?" opt
 do	case ${opt} in
 	f)	match=:;;
+	n)	new=false;;
 	t)	destarg=:
 		dest=${OPTARG};;
 	U)	unified=${OPTARG};;
@@ -306,7 +309,7 @@ do	curr=${1%/}
 		if ${currhave}
 		then	if Diff ${restfile} "${destfile} ${curr}" \
 				-- "${destfile}" "${curr}"
-			then	if Ask file :
+			then	if ${match} && Ask file :
 				then	if ! ${copy}
 					then	mv -- "${curr}" "${dest}"
 					elif ${forcefile}
@@ -314,7 +317,7 @@ do	curr=${1%/}
 					else	touch -r "${curr}" -- "${dest}"
 					fi || rstat=1
 				fi
-			elif Ask file :
+			elif ${new} && Ask file :
 			then	if ! ${copy}
 				then	mv -- "${curr}" "${dest}"
 				elif ${forcefile}

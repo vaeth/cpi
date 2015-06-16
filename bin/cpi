@@ -8,12 +8,12 @@ case ${0##*/} in
 esac
 
 Echo() {
-	printf '%s\n' "${*}"
+	printf '%s\n' "$*"
 }
 
 Usage() {
 	Echo "Usage: ${0##*/} [options] source-file(s) dest-file/dir"
-	if ${copy}
+	if $copy
 	then	Echo "This is a somewhat verbose frontend for \"cp -i -a\":
 For each file you see the differences before you confirm/reject the copying.
 
@@ -33,7 +33,7 @@ options:
 -f               Ask also for matching files/dirs whether to copy
 -n               Skip new (nonexistent in dest) files
 -h               Show this help"
-	if ${copy}
+	if $copy
 	then	Echo \
 "-M               Act as it mvi was called"
 	else	Echo \
@@ -44,17 +44,17 @@ options:
 
 rstat=0
 Error() {
-	Echo "${0##*/}: ${*}" >&2
+	Echo "${0##*/}: $*" >&2
 	rstat=1
 }
 
 Warn() {
-	Error "warning: ${*}"
+	Error "warning: $*"
 }
 
 Die() {
-	Error "${*}"
-	exit ${rstat}
+	Error "$*"
+	exit $rstat
 }
 
 unified=:
@@ -63,50 +63,50 @@ new=:
 destarg=false
 OPTIND=1
 while getopts "fnt:U:CMhH?" opt
-do	case ${opt} in
+do	case $opt in
 	f)	match=:;;
 	n)	new=false;;
 	t)	destarg=:
-		dest=${OPTARG};;
-	U)	unified=${OPTARG};;
+		dest=$OPTARG;;
+	U)	unified=$OPTARG;;
 	C)	copy=:;;
 	M)	copy=false;;
 	*)	Usage 0;;
 	esac
 done
-shift $(( ${OPTIND} - 1 ))
+shift $(( $OPTIND - 1 ))
 
-[ ${#} -ge 1 ] || Usage
-${destarg} || [ ${#} -gt 1 ] || Usage
+[ $# -ge 1 ] || Usage
+$destarg || [ $# -gt 1 ] || Usage
 
-${destarg} || eval dest=\${${#}}
+$destarg || eval dest=\${$#}
 : ${dest:=.}
 dest=${dest%/}
 : ${dest:=/}
 
-if	test -d "${dest}"
+if	test -d "$dest"
 then	isdir=:
 	have=:
-elif	test -r "${dest}"
+elif	test -r "$dest"
 then	isdir=false
 	have=:
 else	isdir=false
 	have=false
 fi
-if ! ${isdir}
-then	if ${destarg}
-	then	[ ${#} -eq 1 ]
-	else	[ ${#} -eq 2 ]
-	fi || Die "for multiple files, destination ${dest} must be a directory"
+if ! $isdir
+then	if $destarg
+	then	[ $# -eq 1 ]
+	else	[ $# -eq 2 ]
+	fi || Die "for multiple files, destination $dest must be a directory"
 fi
 
-case ${unified} in
+case $unified in
 0)
 	diffopt=;;
 *[!0-9]*)
 	diffopt='-u';;
 *)
-	diffopt="-U ${unified}";;
+	diffopt="-U $unified";;
 esac
 
 InitInteractive() {
@@ -120,12 +120,12 @@ InitInteractive
 
 which=`command -v which` || which=
 MakeExternal() {
-	[ "${which}" = 'which' ] && eval ${1}=\`which ${2}\` \
-		|| eval ${1}=\`command -v ${2}\` || eval ${1}=
-	eval ": \${${1}:=${2}}"
+	[ "$which" = 'which' ] && eval $1=\`which $2\` \
+		|| eval $1=\`command -v $2\` || eval $1=
+	eval ": \${$1:=$2}"
 }
 OptExternal() {
-	eval "[ -n \"\${${1}:++}\" ]" || MakeExternal ${1} ${2-${1}}
+	eval "[ -n \"\${$1:++}\" ]" || MakeExternal $1 ${2-$1}
 }
 
 getdifftools=GetDiffTools
@@ -138,47 +138,47 @@ GetDiffTools() {
 	if command -v less >/dev/null 2>&1
 	then	haveless=:
 		MakeExternal less less
-		LESS="${LESS} -FR"
+		LESS="$LESS -FR"
 		export LESS
 	else	haveless=false
 	fi
 }
 Diff() {
-	${getdifftools}
-	if ${1}
-	then	Echo "# diff -q ${2}"
+	$getdifftools
+	if $1
+	then	Echo "# diff -q $2"
 		shift 2
-		"${diff}" -q "${@}"
+		"$diff" -q "$@"
 		return
 	fi
-	diffecho="# diff ${diffopt}${diffopt:+ }${2}"
+	diffecho="# diff $diffopt${diffopt:+ }$2"
 	shift 2
-	if ${haveless}
+	if $haveless
 	then	diffstat=`{
 			{
-				Echo "${diffecho}"
-				"${diff}" ${diffopt} "${@}"
-				printf '%s' "${?}" >&3
-			} | "${less}" >&4
+				Echo "$diffecho"
+				"$diff" $diffopt "$@"
+				printf '%s' "$?" >&3
+			} | "$less" >&4
 		} 3>&1` 4>&1
-		[ "${diffstat}" -eq 0 ]
-	else	Echo "${diffecho}"
-		"${diff}" "${@}"
+		[ "$diffstat" -eq 0 ]
+	else	Echo "$diffecho"
+		"$diff" "$@"
 	fi
 }
 
 cp=
 Cp() {
 	OptExternal cp
-	"${cp}" "${@}"
+	"$cp" "$@"
 }
 
 preservestat=
 CheckPreserve() {
-	[ -n "${preservestat:++}" ] && return ${preservestat}
+	[ -n "${preservestat:++}" ] && return $preservestat
 	LANG=C Cp --help 2>&1 | grep -- --preserve >/dev/null
-	preservestat=${?}
-	return ${preservestat}
+	preservestat=$?
+	return $preservestat
 }
 
 Getkey() {
@@ -186,159 +186,159 @@ Getkey() {
 	getkeyt=`stty -g`
 	stty -icanon -echo
 	key=`dd count=1 bs=1 2>/dev/null` || key=
-	stty ${getkeyt}
+	stty $getkeyt
 }
 BackSpace() {
-	backcount=${askt}
+	backcount=$askt
 	backspace=
 	while [ -n "${backcount:++}" ]
-	do	backspace=${backspace}'\b \b'
+	do	backspace=$backspace'\b \b'
 		backcount=${backcount%?}
 	done
-	printf "${backspace}"'%s\n' "${*}"
+	printf "$backspace"'%s\n' "$*"
 }
 Ask() {
 while :
-do	aska=${curr}
-	askb=${dest}
+do	aska=$curr
+	askb=$dest
 	asks='='
-	${copy} || asks='-'
-	if ${2}
-	then	asks=${asks}'>|'
-	else	asks=${asks}'o'
+	$copy || asks='-'
+	if $2
+	then	asks=$asks'>|'
+	else	asks=$asks'o'
 	fi
-	[ ${1} != 'dir' ] || aska="${aska}/"
-	! ${isdir} || askb="${askb}/"
-	if eval \${rest${1}}
-	then	if ${copy} && eval \${force${1}}
-		then	askt="YES for all ${1}s (cp -a)"
-		else	askt="yes for all ${1}s"
+	[ $1 != 'dir' ] || aska=$aska/
+	! $isdir || askb=$askb/
+	if eval \${rest$1}
+	then	if $copy && eval \${force$1}
+		then	askt="YES for all $1s (cp -a)"
+		else	askt="yes for all $1s"
 		fi
-		printf '%s %s %s\t%s\n' "${aska}" "${asks}" "${askb}" "${askt}"
+		printf '%s %s %s\t%s\n' "$aska" "$asks" "$askb" "$askt"
 		return 0
 	fi
 	askt='yes'
-	if ${copy}
-	then	${2} && askt=${askt}'/YES (cp -a)'
-		askt=${askt}'/no/all '${1}'s/ALL '${1}'s (cp -a)/move/quit? '
-	else	askt=${askt}'/no/all '${1}'s/copy/quit? '
+	if $copy
+	then	$2 && askt=$askt'/YES (cp -a)'
+		askt=$askt'/no/all '$1's/ALL '$1's (cp -a)/move/quit? '
+	else	askt=$askt'/no/all '$1's/copy/quit? '
 	fi
-	printf '%s %s %s\t%s' "${aska}" "${asks}" "${askb}" "${askt}"
+	printf '%s %s %s\t%s' "$aska" "$asks" "$askb" "$askt"
 	while :
 	do	Getkey
-	case ${key} in
-	m)	! ${copy} && continue
+	case $key in
+	m)	! $copy && continue
 		BackSpace 'switch to move mode'
 		copy=false
 		InitInteractive
 		break;;
-	c)	${copy} && continue
+	c)	$copy && continue
 		BackSpace 'switch to copy mode'
 		copy=:
 		InitInteractive
 		break;;
 	y)	BackSpace 'yes'
-		eval force${1}=false
+		eval force$1=false
 		return 0;;
-	Y)	if ${copy} && ${2}
+	Y)	if $copy && $2
 		then	BackSpace 'YES (cp -a)'
-			eval force${1}=:
+			eval force$1=:
 			return 0
 		fi;;
 	n)	BackSpace 'no'
 		return 1;;
-	a)	BackSpace "yes for all ${1}s"
-		eval "rest${1}=:
-		force${1}=false"
+	a)	BackSpace "yes for all $1s"
+		eval "rest$1=:
+		force$1=false"
 		return 0;;
-	A)	! ${copy} && continue
-		BackSpace "YES for all ${1}s (cp -a)"
-		eval "rest${1}=:
-		force${1}=:"
+	A)	! $copy && continue
+		BackSpace "YES for all $1s (cp -a)"
+		eval "rest$1=:
+		force$1=:"
 		return 0;;
 	q)	BackSpace 'quit'
-		exit ${rstat};;
+		exit $rstat;;
 	esac
 	done
 done
 }
 
 CopyDirToExisting() {
-	if ! test -d "${dest}/${curr}"
-	then	Warn "not a directory: ${dest%/}/${curr}"
+	if ! test -d "$dest/$curr"
+	then	Warn "not a directory: ${dest%/}/$curr"
 		return
 	fi
-	if ! ${copy}
-	then	Warn "not moving onto existing dir ${dest%/}/${curr}"
+	if ! $copy
+	then	Warn "not moving onto existing dir ${dest%/}/$curr"
 		return
 	fi
-	if Diff ${restdir} "-r ${dest%/}/${curr}/ ${curr}/" \
-		-r -- "${dest}/${curr}" "${curr}"
-	then	${match}
+	if Diff $restdir "-r ${dest%/}/$curr/ $curr/" \
+		-r -- "$dest/$curr" "$curr"
+	then	$match
 	fi && if Ask dir :
-	then	if ${forcedir}
-		then	Cp -a -- "${curr}" "${dest}"
-		else	Cp -a -i -- "${curr}" "${dest}"
+	then	if $forcedir
+		then	Cp -a -- "$curr" "$dest"
+		else	Cp -a -i -- "$curr" "$dest"
 		fi || rstat=1
 	fi
 }
 
-if ${destarg}
+if $destarg
 then	skiparg=0
 else	skiparg=1
 fi
-while [ ${#} -gt ${skiparg} ]
+while [ $# -gt $skiparg ]
 do	curr=${1%/}
-	if test -d "${curr}"
-	then	${isdir} || Warn "skipping directory ${curr}"
-		if test -r "${dest}/${curr}"
+	if test -d "$curr"
+	then	$isdir || Warn "skipping directory $curr"
+		if test -r "$dest/$curr"
 		then	CopyDirToExisting
 		elif Ask dir false
-		then	Cp -a -- "${curr}" "${dest}" || rstat=1
+		then	Cp -a -- "$curr" "$dest" || rstat=1
 		fi
-	elif test -r "${curr}"
-	then	if ${isdir}
-		then	destfile="${dest}/${curr##*/}"
-			if test -r "${destfile}"
+	elif test -r "$curr"
+	then	if $isdir
+		then	destfile=$dest/${curr##*/}
+			if test -r "$destfile"
 			then	currhave=:
 			else	currhave=false
 			fi
-		else	destfile=${dest}
-			currhave=${have}
+		else	destfile=$dest
+			currhave=$have
 		fi
-		if ${currhave}
-		then	if Diff ${restfile} "${destfile} ${curr}" \
-				-- "${destfile}" "${curr}"
-			then	if ${match} && Ask file :
-				then	if ! ${copy}
-					then	mv -- "${curr}" "${dest}"
-					elif ${forcefile}
-					then	Cp -a -- "${curr}" "${dest}"
-					else	touch -r "${curr}" -- "${dest}"
+		if $currhave
+		then	if Diff $restfile "$destfile $curr" \
+				-- "$destfile" "$curr"
+			then	if $match && Ask file :
+				then	if ! $copy
+					then	mv -- "$curr" "$dest"
+					elif $forcefile
+					then	Cp -a -- "$curr" "$dest"
+					else	touch -r "$curr" -- "$dest"
 					fi || rstat=1
 				fi
-			elif ${new} && Ask file :
-			then	if ! ${copy}
-				then	mv -- "${curr}" "${dest}"
-				elif ${forcefile}
-				then	Cp -a -- "${curr}" "${dest}"
+			elif $new && Ask file :
+			then	if ! $copy
+				then	mv -- "$curr" "$dest"
+				elif $forcefile
+				then	Cp -a -- "$curr" "$dest"
 				elif	CheckPreserve
 				then	Cp --preserve=timestamps -d -- \
-						"${curr}" "${dest}"
-				else	Cp -d -- "${curr}" "${dest}" && {
-						test -h "${dest}" || \
-						touch -r "${curr}" -- "${dest}"
+						"$curr" "$dest"
+				else	Cp -d -- "$curr" "$dest" && {
+						test -h "$dest" || \
+						touch -r "$curr" -- "$dest"
 					}
 				fi || rstat=1
 			fi
 		elif Ask file false
-		then	if ! ${copy}
-			then	mv -- "${curr}" "${dest}"
-			else	Cp -a -- "${curr}" "${dest}"
+		then	if ! $copy
+			then	mv -- "$curr" "$dest"
+			else	Cp -a -- "$curr" "$dest"
 			fi || rstat=1
 		fi
-	else	Warn "skipping nonexistent ${curr}"
+	else	Warn "skipping nonexistent $curr"
 	fi
 	shift
 done
-exit ${rstat}
+exit $rstat

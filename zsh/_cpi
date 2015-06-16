@@ -17,5 +17,5 @@ _arguments -s -S -A '-*' : \
 '-n[skip new (nonexistent in dest) files]' \
 '-U+[X (Use X lines unified context. X=0 means no -u)]:line numbers or 0 for no -u:(0)' \
 '-t+[Use ARG as destination]:destination directory/file:_files' \
-${service_opts} \
+$service_opts \
 '*::files or dirs:_files'

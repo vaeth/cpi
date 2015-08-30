@@ -138,7 +138,7 @@ GetDiffTools() {
 	if command -v less >/dev/null 2>&1
 	then	haveless=:
 		MakeExternal less less
-		LESS="$LESS -FR"
+		LESS=${LESS-}${LESS:+ }-FR
 		export LESS
 	else	haveless=false
 	fi

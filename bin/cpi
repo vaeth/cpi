@@ -161,9 +161,7 @@ Diff() {
 				"$diff" $diffopt "$@"
 				printf '%s' "$?" >&3
 			} | "$less" >&4
-		} 3>&1
-		exec >&3-`
-		exec >&4-
+		} 3>&1`
 		[ "$diffstat" -eq 0 ]
 	else	Echo "$diffecho"
 		"$diff" "$@"

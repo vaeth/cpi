@@ -143,6 +143,15 @@ GetDiffTools() {
 	else	haveless=false
 	fi
 }
+DiffPipe() {
+	diffpipe=`{
+	{
+		"$diff" $diffopt "$@"
+		printf '%s' "$?" >&3
+	} | "$less" >&4
+} 3>&1`
+	return "$diffpipe"
+}
 Diff() {
 	$getdifftools
 	if $1
@@ -152,19 +161,11 @@ Diff() {
 		return
 	fi
 	diffecho='# diff '$diffopt${diffopt:+\ }$2
+	Echo "$diffecho"
 	shift 2
 	if $haveless
-	then	exec 4>&1
-		diffstat=`{
-			{
-				Echo "$diffecho"
-				"$diff" $diffopt "$@"
-				printf '%s' "$?" >&3
-			} | "$less" >&4
-		} 3>&1`
-		[ "$diffstat" -eq 0 ]
-	else	Echo "$diffecho"
-		"$diff" "$@"
+	then	DiffPipe "$@" 4>&1
+	else	"$diff" $diffopt "$@"
 	fi
 }
 

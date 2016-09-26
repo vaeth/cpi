@@ -62,7 +62,7 @@ match=false
 new=:
 destarg=false
 OPTIND=1
-while getopts "fnt:U:CMhH?" opt
+while getopts "fnt:U:CMhH" opt
 do	case $opt in
 	f)	match=:;;
 	n)	new=false;;
@@ -71,6 +71,7 @@ do	case $opt in
 	U)	unified=$OPTARG;;
 	C)	copy=:;;
 	M)	copy=false;;
+	'?')	exit 1;;
 	*)	Usage 0;;
 	esac
 done
@@ -103,7 +104,7 @@ fi
 case $unified in
 0)
 	diffopt=;;
-*[!0-9]*)
+*[!0123456789]*)
 	diffopt='-u';;
 *)
 	diffopt="-U $unified";;

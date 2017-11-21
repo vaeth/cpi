@@ -14,8 +14,16 @@ Echo() {
 Usage() {
 	Echo "Usage: ${0##*/} [options] source-file(s) dest-file/dir"
 	if $copy
-	then	Echo "This is a somewhat verbose frontend for \"cp -i -a\":
-For each file you see the differences before you confirm/reject the copying.
+	then	ucopy=copy
+		ucopying=copying
+		ucmd='cp -i -a'
+	else	ucopy=move
+		ucopying=moving
+		ucmd='mv -i'
+	fi
+	if $copy
+	then	Echo "This is a somewhat verbose frontend for \"$ucmd\":
+For each file you see the differences before you confirm/reject the $ucopying.
 
 By default, existing files are copied with only preserving timestamps;
 if source-file(s) is a directory, it will copied with \"cp -i -a\".
@@ -29,8 +37,10 @@ For each file you see the differences before you confirm the moving."
 	Echo "
 options:
 -t dest-file/dir (with this option, all args are treated as source-file(s)
+-d               Use source directories' content if the destination is an
+                 existing directory
 -U X             Use X lines unified context. X=0 means no -u
--f               Ask also for matching files/dirs whether to copy
+-f               Ask also for matching files/dirs whether to $ucopy
 -n               Skip new (nonexistent in dest) files
 -h               Show this help"
 	if $copy
@@ -57,13 +67,48 @@ Die() {
 	exit $rstat
 }
 
+ClearKeyBuffer() {
+	stty -icanon -echo min 0 time 0
+	while [ -n "`dd count=1 bs=1 2>/dev/null`" ]
+	do	:
+	done
+}
+
+savetty=
+Exittrap() {
+	if [ -n "$savetty" ]
+	then	trap : EXIT HUP INT TERM
+		ClearKeyBuffer
+		stty $savetty
+	fi
+	trap - EXIT HUP INT TERM
+	exit $rstat
+}
+
+StripSlashes() {
+	eval stripvar=\$$1
+	while :
+	do	case $stripvar in
+		/)
+			break;;
+		*/)
+			stripvar=${stripvar%/}
+			continue;;
+		esac
+		break
+	done
+	eval $1=\$stripvar
+}
+
 unified=:
 match=false
 new=:
+dirmode=false
 destarg=false
 OPTIND=1
-while getopts "fnt:U:CMhH" opt
+while getopts "dfnt:U:CMhH" opt
 do	case $opt in
+	d)	dirmode=:;;
 	f)	match=:;;
 	n)	new=false;;
 	t)	destarg=:
@@ -77,22 +122,24 @@ do	case $opt in
 done
 shift $(( $OPTIND - 1 ))
 
-[ $# -ge 1 ] || Usage
-$destarg || [ $# -gt 1 ] || Usage
-
-$destarg || eval dest=\${$#}
+if $destarg
+then	skiparg=0
+	[ $# -ge 1 ] || Usage
+else	skiparg=1
+	eval dest=\${$#}
+	[ $# -gt 1 ] || Usage
+fi
 : ${dest:=.}
-dest=${dest%/}
-: ${dest:=/}
+StripSlashes dest
 
-if	test -d "$dest"
+if test -d "$dest"
 then	isdir=:
 	have=:
-elif	test -r "$dest"
-then	isdir=false
-	have=:
 else	isdir=false
-	have=false
+	if test -e "$dest"
+	then	have=:
+	else	have=false
+	fi
 fi
 if ! $isdir
 then	if $destarg
@@ -113,8 +160,15 @@ esac
 InitInteractive() {
 	restfile=false
 	restdir=false
+	restlink=false
+	restrecurse=false
+	neverfile=false
+	neverdir=false
+	neverlink=false
+	neverrecurse=false
 	forcefile=false
 	forcedir=false
+	forcelink=false
 }
 
 InitInteractive
@@ -144,6 +198,7 @@ GetDiffTools() {
 	else	haveless=false
 	fi
 }
+
 DiffPipe() {
 	diffpipe=`{
 	{
@@ -153,6 +208,8 @@ DiffPipe() {
 } 3>&1`
 	return "$diffpipe"
 }
+
+# Args: quietmode textarg diffarg
 Diff() {
 	$getdifftools
 	if $1
@@ -170,6 +227,21 @@ Diff() {
 	fi
 }
 
+Linkdiff() {
+	linkdiff=
+	linkdiffa=`readlink -q -- "$1"` || {
+		linkdiffa=?
+		linkdiff=1
+	}
+	linkdiffb=`readlink -q -- "$2"` || {
+		linkdiffb=?
+		linkdiff=1
+	}
+	Echo "## symbolic link: $1 -> $linkdiffa
+## symbolic link: $2 -> $linkdiffb"
+	[ -z "$linkdiff" ] && [ "$linkdiffa" = "$linkdiffb" ]
+}
+
 cp=
 Cp() {
 	OptExternal cp
@@ -184,15 +256,30 @@ CheckPreserve() {
 	return $preservestat
 }
 
-Getkey() {
-	key=
-	getkeyt=`stty -g`
-	stty -icanon -echo
-	key=`dd count=1 bs=1 2>/dev/null` || key=
-	stty $getkeyt
+ClearKeyBufferQuick() {
+	stty -icanon -echo min 0 time 0
+	while [ -n "`dd count=1 bs=1 2>/dev/null`" ]
+	do	:
+	done
 }
+
+Getkey() {
+	if [ -z "$savetty" ]
+	then	savetty=`stty -g`
+		trap Exittrap EXIT HUP INT TERM
+	fi
+	ClearKeyBuffer
+	stty -icanon -echo min 1 time 0
+	key=`dd count=1 bs=1 2>/dev/null` || key=
+	ClearKeyBuffer
+	stty $savetty
+	:
+}
+
+# Args: oldtext newtext
 BackSpace() {
-	backcount=$askt
+	backcount=$1
+	shift
 	backspace=
 	while [ -n "${backcount:++}" ]
 	do	backspace=$backspace'\b \b'
@@ -200,148 +287,246 @@ BackSpace() {
 	done
 	printf "$backspace"'%s\n' "$*"
 }
+
+# Args: file/dir/link exists sourcetext desttext
 Ask() {
 while :
-do	aska=$curr
-	askb=$dest
-	asks='='
-	$copy || asks='-'
+do	if $copy
+	then	asks='='
+	else	asks='-'
+	fi
 	if $2
 	then	asks=$asks'>|'
 	else	asks=$asks'o'
 	fi
-	[ $1 != 'dir' ] || aska=$aska/
-	! $isdir || askb=$askb/
+	if eval \${never$1}
+	then	printf '%s %s %s\t%s\n' "$3" "$asks" "$4" \
+			"never for any ${1}s"
+		return 1
+	fi
 	if eval \${rest$1}
 	then	if $copy && eval \${force$1}
-		then	askt="YES for all $1s (cp -a)"
-		else	askt="yes for all $1s"
+		then	askt="YES for all ${1}s (cp -a)"
+		else	askt="yes for all ${1}s"
 		fi
-		printf '%s %s %s\t%s\n' "$aska" "$asks" "$askb" "$askt"
+		printf '%s %s %s\t%s\n' "$3" "$asks" "$4" "$askt"
 		return 0
 	fi
 	askt='yes'
 	if $copy
-	then	$2 && askt=$askt'/YES (cp -a)'
-		askt=$askt'/no/all '$1's/ALL '$1's (cp -a)/move/quit? '
-	else	askt=$askt'/no/all '$1's/copy/quit? '
+	then	$2 && askt=$askt'/YES(-a)'
+		askt=$askt'/no/all '$1's/ALL(-a) '$1's/NEVER '$1's/move/quit? '
+	else	askt=$askt'/no/all '$1's/Never any '$1's/copy/quit? '
 	fi
-	printf '%s %s %s\t%s' "$aska" "$asks" "$askb" "$askt"
-	while :
-	do	Getkey
-	case $key in
+	printf '%s %s %s\t%s' "$3" "$asks" "$4" "$askt"
+	while Getkey
+	do	case $key in
 	m)	! $copy && continue
-		BackSpace 'switch to move mode'
+		BackSpace "$askt" 'switch to move mode and reset replies'
 		copy=false
 		InitInteractive
 		break;;
 	c)	$copy && continue
-		BackSpace 'switch to copy mode'
+		BackSpace "$askt" 'switch to copy mode and reset replies'
 		copy=:
 		InitInteractive
 		break;;
-	y)	BackSpace 'yes'
+	y)	BackSpace "$askt" 'yes'
 		eval force$1=false
 		return 0;;
 	Y)	if $copy && $2
-		then	BackSpace 'YES (cp -a)'
+		then	BackSpace "$askt" 'YES(-a)'
 			eval force$1=:
 			return 0
 		fi;;
-	n)	BackSpace 'no'
+	n)	BackSpace "$askt" 'no'
 		return 1;;
-	a)	BackSpace "yes for all $1s"
+	N)	BackSpace "$askt" "never for any ${1}s"
+		eval "never$1=:"
+		return 1;;
+	a)	BackSpace "$askt" "yes for all ${1}s"
 		eval "rest$1=:
 		force$1=false"
 		return 0;;
 	A)	! $copy && continue
-		BackSpace "YES for all $1s (cp -a)"
+		BackSpace "$askt" "YES for all ${1}s (cp -a)"
 		eval "rest$1=:
 		force$1=:"
 		return 0;;
-	q)	BackSpace 'quit'
+	q)	BackSpace "$askt" 'quit'
 		exit $rstat;;
 	esac
 	done
 done
 }
 
-CopyDirToExisting() {
-	if ! test -d "$dest/$curr"
-	then	Warn "not a directory: ${dest%/}/$curr"
-		return
+# Args: dir
+AskRecurse() {
+	asks='@'
+	if $neverrecurse
+	then	printf '%s %s\t%s\n' "$asks" "$1" 'never recurse'
+		return 1
 	fi
-	if ! $copy
-	then	Warn "not moving onto existing dir ${dest%/}/$curr"
-		return
+	if $restrecurse
+	then	printf '%s %s\t%s\n' "$asks" "$1" 'always recurse'
+		return 0
 	fi
-	if Diff $restdir "-r ${dest%/}/$curr/ $curr/" \
-		-r -- "$dest/$curr" "$curr"
-	then	$match
-	fi && if Ask dir :
-	then	if $forcedir
-		then	Cp -a -- "$curr" "$dest"
-		else	Cp -a -i -- "$curr" "$dest"
-		fi || rstat=1
+	askt='yes/no/always recurse/NEVER recurse/quit? '
+	printf '%s %s\t%s' "$asks" "$1" "$askt"
+	while Getkey
+	do	case $key in
+	y)	BackSpace "$askt" 'yes'
+		return 0;;
+	n)	BackSpace "$askt" 'no'
+		return 1;;
+	N)	BackSpace "$askt" "never for any ${1}s"
+		neverrecurse=:
+		return 1;;
+	a)	BackSpace "$askt" 'always recurse'
+		restrecurse=:
+		return 0;;
+	q)	BackSpace "$askt" 'quit'
+		exit $rstat;;
+	esac
+	done
+}
+
+WarnNonDir() {
+	if $copy
+	then	Warn "cannot copy dir $1 to file $2"
+	else	Warn "cannot move dir $1 to file $2"
 	fi
 }
 
-if $destarg
-then	skiparg=0
-else	skiparg=1
-fi
-while [ $# -gt $skiparg ]
-do	curr=${1%/}
-	if test -d "$curr"
-	then	$isdir || Warn "skipping directory $curr"
-		if test -r "$dest/$curr"
-		then	CopyDirToExisting
-		elif Ask dir false
-		then	Cp -a -- "$curr" "$dest" || rstat=1
-		fi
-	elif test -r "$curr"
-	then	if $isdir
-		then	destfile=$dest/${curr##*/}
-			if test -r "$destfile"
-			then	currhave=:
-			else	currhave=false
-			fi
-		else	destfile=$dest
-			currhave=$have
-		fi
-		if $currhave
-		then	if Diff $restfile "$destfile $curr" \
-				-- "$destfile" "$curr"
-			then	if $match && Ask file :
-				then	if ! $copy
-					then	mv -- "$curr" "$dest"
-					elif $forcefile
-					then	Cp -a -- "$curr" "$dest"
-					else	touch -r "$curr" -- "$dest"
-					fi || rstat=1
-				fi
-			elif $new && Ask file :
-			then	if ! $copy
-				then	mv -- "$curr" "$dest"
-				elif $forcefile
-				then	Cp -a -- "$curr" "$dest"
-				elif	CheckPreserve
-				then	Cp --preserve=timestamps -d -- \
-						"$curr" "$dest"
-				else	Cp -d -- "$curr" "$dest" && {
-						test -h "$dest" || \
-						touch -r "$curr" -- "$dest"
-					}
-				fi || rstat=1
-			fi
-		elif Ask file false
-		then	if ! $copy
-			then	mv -- "$curr" "$dest"
-			else	Cp -a -- "$curr" "$dest"
-			fi || rstat=1
-		fi
-	else	Warn "skipping nonexistent $curr"
+WarnNonSymlink() {
+	if $copy
+	then	Warn "cannot copy symlink $1 to non-symlink $2"
+	else	Warn "cannot move symlink $1 to non-symlink $2"
 	fi
+}
+
+CopyDirToExisting() {
+	if test -h "$2" || ! test -d "$2"
+	then	WarnNonDir "$1" "$2"
+		return
+	fi
+	AskRecurse "$1" || return
+	for item in "$1"/.* "$1"/*
+	do	case $item in
+		"$1/."|"$1/..")
+			continue;;
+		"$1/.*"|"$1/*")
+			test -e "$item" || continue;;
+		esac
+		HandleItem "$item" "$2" false
+	done
+}
+
+# Args: source dest dirmode
+HandleItem() {
+	if test -d "$1" && ! test -h "$1"
+	then	if ! $isdir
+		then	WarnNonDir "$1" "$2"
+			return
+		fi
+		if $3
+		then	CopyDirToExisting "$1" "$2"
+			return
+		fi
+		destfile=$2/${1##*/}
+		if test -e "$destfile"
+		then	CopyDirToExisting "$1" "$destfile"
+			return
+		fi
+		Ask dir false "$1" "$2/" || return
+		Cp -a -- "$1" "$2" || rstat=1
+		return
+	fi
+	if ! test -e "$1"
+	then	Warn "skipping nonexistent $1"
+		return
+	fi
+	if $isdir
+	then	destfile=$2/${1##*/}
+		if test -e "$destfile"
+		then	currhave=:
+		else	currhave=false
+		fi
+		desttext=$2/
+	else	destfile=$2
+		desttext=$2
+		currhave=$have
+	fi
+	if test -h "$1"
+	then	currmode=link
+		currh=-h
+		currlink=:
+	else	currmode=file
+		currh=
+		currlink=false
+	fi
+	if ! $currhave
+	then	$new && Ask $currmode false "$1" "$desttext" || return
+		if ! $copy
+		then	mv -- "$1" "$2" || rstat=1
+		else	Cp -a -- "$1" "$2" || rstat=1
+		fi
+		return
+	fi
+	eq=:
+	if $currlink
+	then	if ! test -h "$destfile"
+		then	WarnNonSymlink "$1" "$destfile"
+			return
+		fi
+		Linkdiff "$1" "$destfile" || eq=false
+	else	Diff $restfile "$destfile $1" -- "$destfile" "$1" || eq=false
+	fi
+	if $eq
+	then	$match && Ask $currmode : "$1" "$desttext" || return
+		if ! $copy
+		then	mv -- "$1" "$2" || rstat=1
+		elif $forcefile
+		then	Cp -a -- "$1" "$2" || rstat=1
+		else	touch $currh -r "$1" -- "$2" || rstat=1
+		fi
+		return
+	fi
+	Ask $currmode : "$1" "$desttext" || return
+	if $currlink
+	then	if ! rm -- "$destfile"
+		then	rstat=1
+			Warn "failed to remove symlink $destfile"
+			return
+		fi
+		if $copy
+		then	Cp -a -- "$1" "$2" || rstat=1
+		else	mv -- "$1" "$2" || rstat=1
+		fi
+		return
+	fi
+	if ! $copy
+	then	mv -- "$1" "$2" || rstat=1
+		return
+	fi
+	if $forcefile
+	then	Cp -a -- "$1" "$2" || rstat=1
+		return
+	fi
+	if CheckPreserve
+	then	Cp --preserve=timestamps -- "$1" "$2" || rstat=1
+		return
+	fi
+	Cp -- "$1" "$2" && {
+		test -h "$2" || touch -r "$1" -- "$2"
+	} || rstat=1
+	return
+}
+
+while [ $# -gt $skiparg ]
+do	source=$1
+	StripSlashes source
+	HandleItem "$source" "$dest" $dirmode
 	shift
 done
 exit $rstat

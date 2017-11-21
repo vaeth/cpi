@@ -15,6 +15,7 @@ _arguments -s -S -A '-*' : \
 '(* -)'{'-h','-H'}'[help]' \
 '-f[force asking for matching files]' \
 '-n[skip new (nonexistent in dest) files]' \
+'-d[use source dirs content if destination dir exists]' \
 '-U+[X (Use X lines unified context. X=0 means no -u)]:line numbers or 0 for no -u:(0)' \
 '-t+[Use ARG as destination]:destination directory/file:_files' \
 $service_opts \
